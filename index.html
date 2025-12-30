@@ -1,1 +1,370 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Spin Wheel</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: radial-gradient(circle at top, #1b2440, #0e1220 55%);
+        color: #f7f7f7;
+      }
+      .app {
+        display: grid;
+        gap: 1.5rem;
+        padding: 2rem;
+        background: rgba(12, 16, 28, 0.8);
+        border-radius: 24px;
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+      }
+      h1 {
+        margin: 0;
+        font-size: 1.8rem;
+        letter-spacing: 0.02em;
+      }
+      .wheel-wrap {
+        position: relative;
+        display: grid;
+        place-items: center;
+      }
+      canvas {
+        width: 360px;
+        height: 360px;
+        max-width: 80vw;
+        max-height: 80vw;
+      }
+      .pointer {
+        position: absolute;
+        top: -10px;
+        width: 0;
+        height: 0;
+        border-left: 18px solid transparent;
+        border-right: 18px solid transparent;
+        border-bottom: 30px solid #ffcf4a;
+        filter: drop-shadow(0 4px 4px rgba(0, 0, 0, 0.4));
+      }
+      .hidden-overlay {
+        position: absolute;
+        inset: 0;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.55);
+        display: none;
+        place-items: center;
+        font-size: 4rem;
+        font-weight: 700;
+        color: #ffffff;
+        text-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
+      }
+      .hidden-overlay.active {
+        display: grid;
+      }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: center;
+        justify-content: center;
+      }
+      button {
+        border: none;
+        background: #ffcf4a;
+        color: #10131a;
+        font-weight: 700;
+        padding: 0.75rem 1.6rem;
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 1rem;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      button:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 16px rgba(255, 207, 74, 0.3);
+      }
+      label {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        font-size: 0.95rem;
+      }
+      input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+      }
+      .result {
+        text-align: center;
+        min-height: 2rem;
+        font-size: 1.1rem;
+        color: #cfe7ff;
+      }
+      .modal {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: rgba(0, 0, 0, 0.65);
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.2s ease;
+      }
+      .modal.active {
+        opacity: 1;
+        pointer-events: auto;
+      }
+      .modal-card {
+        background: #111827;
+        padding: 2rem 2.5rem;
+        border-radius: 18px;
+        text-align: center;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+        max-width: 90vw;
+      }
+      .modal-card h2 {
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+        font-size: 1.5rem;
+      }
+      .modal-card p {
+        margin: 0 0 1.5rem;
+        font-size: 1.2rem;
+        color: #fcd96b;
+        font-weight: 700;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <h1>Spin Wheel</h1>
+      <div class="wheel-wrap">
+        <div class="pointer"></div>
+        <canvas id="wheel" width="720" height="720"></canvas>
+        <div id="hiddenOverlay" class="hidden-overlay">?</div>
+      </div>
+      <div class="controls">
+        <button id="spinButton">Spin</button>
+        <label>
+          <input id="hiddenMode" type="checkbox" checked />
+          Hidden mode
+        </label>
+      </div>
+      <div class="result" id="resultText">Ready to spin.</div>
+    </main>
 
+    <div class="modal" id="resultModal" aria-hidden="true">
+      <div class="modal-card">
+        <h2>Result</h2>
+        <p id="modalResult">---</p>
+        <button id="closeModal">Got it</button>
+      </div>
+    </div>
+
+    <script>
+      const canvas = document.getElementById("wheel");
+      const ctx = canvas.getContext("2d");
+      const spinButton = document.getElementById("spinButton");
+      const hiddenMode = document.getElementById("hiddenMode");
+      const resultText = document.getElementById("resultText");
+      const hiddenOverlay = document.getElementById("hiddenOverlay");
+      const resultModal = document.getElementById("resultModal");
+      const modalResult = document.getElementById("modalResult");
+      const closeModal = document.getElementById("closeModal");
+
+      const segments = [
+        "Treasure",
+        "Bonus",
+        "Jackpot",
+        "Extra Spin",
+        "Shield",
+        "Mystery",
+        "Double",
+        "Wild",
+      ];
+      const colors = [
+        "#ff6b6b",
+        "#feca57",
+        "#48dbfb",
+        "#1dd1a1",
+        "#5f27cd",
+        "#ff9ff3",
+        "#54a0ff",
+        "#00d2d3",
+      ];
+
+      let currentAngle = 0;
+      let spinning = false;
+      let audioContext;
+
+      const wheelRadius = canvas.width / 2;
+      const center = wheelRadius;
+      const arc = (Math.PI * 2) / segments.length;
+
+      const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+      const setupAudio = () => {
+        if (!audioContext) {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+      };
+
+      const playTick = () => {
+        if (!audioContext) return;
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.frequency.value = 520;
+        gain.gain.value = 0.12;
+        osc.connect(gain).connect(audioContext.destination);
+        osc.start();
+        osc.stop(audioContext.currentTime + 0.05);
+      };
+
+      const playWinSound = () => {
+        if (!audioContext) return;
+        const osc = audioContext.createOscillator();
+        const gain = audioContext.createGain();
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(440, audioContext.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(880, audioContext.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.2, audioContext.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.0001, audioContext.currentTime + 0.4);
+        osc.connect(gain).connect(audioContext.destination);
+        osc.start();
+        osc.stop(audioContext.currentTime + 0.45);
+      };
+
+      const drawWheel = () => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.translate(center, center);
+        ctx.rotate(currentAngle);
+
+        segments.forEach((label, index) => {
+          ctx.beginPath();
+          ctx.fillStyle = colors[index % colors.length];
+          ctx.moveTo(0, 0);
+          ctx.arc(0, 0, wheelRadius - 10, arc * index, arc * (index + 1));
+          ctx.closePath();
+          ctx.fill();
+
+          if (!hiddenMode.checked) {
+            ctx.save();
+            ctx.fillStyle = "#0e1220";
+            ctx.rotate(arc * index + arc / 2);
+            ctx.textAlign = "right";
+            ctx.font = "bold 28px sans-serif";
+            ctx.fillText(label, wheelRadius - 40, 10);
+            ctx.restore();
+          }
+        });
+
+        ctx.beginPath();
+        ctx.fillStyle = "#0e1220";
+        ctx.arc(0, 0, 80, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#f7f7f7";
+        ctx.font = "bold 20px sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText("SPIN", 0, 8);
+
+        ctx.restore();
+      };
+
+      const normalizeAngle = (angle) => ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+
+      const getSelectedIndex = () => {
+        const pointerAngle = normalizeAngle(Math.PI * 1.5 - currentAngle);
+        return Math.floor(pointerAngle / arc) % segments.length;
+      };
+
+      const showResult = (label) => {
+        modalResult.textContent = label;
+        resultModal.classList.add("active");
+        resultModal.setAttribute("aria-hidden", "false");
+      };
+
+      const hideResult = () => {
+        resultModal.classList.remove("active");
+        resultModal.setAttribute("aria-hidden", "true");
+      };
+
+      const spin = () => {
+        if (spinning) return;
+        setupAudio();
+        if (audioContext?.state === "suspended") {
+          audioContext.resume();
+        }
+
+        const targetIndex = Math.floor(Math.random() * segments.length);
+        const spins = 5 + Math.random() * 2;
+        const targetAngle = Math.PI * 1.5 - (targetIndex + 0.5) * arc;
+        const startAngle = currentAngle;
+        const totalRotation = spins * Math.PI * 2 + targetAngle - startAngle;
+
+        const duration = 4200;
+        const startTime = performance.now();
+        spinning = true;
+        spinButton.disabled = true;
+        resultText.textContent = hiddenMode.checked ? "Spinning..." : "Spinning...";
+        hiddenOverlay.classList.toggle("active", hiddenMode.checked);
+
+        let lastTickIndex = getSelectedIndex();
+
+        const animate = (time) => {
+          const elapsed = time - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          const eased = easeOutCubic(progress);
+          currentAngle = startAngle + totalRotation * eased;
+          drawWheel();
+
+          const currentIndex = getSelectedIndex();
+          if (currentIndex !== lastTickIndex) {
+            playTick();
+            lastTickIndex = currentIndex;
+          }
+
+          if (progress < 1) {
+            requestAnimationFrame(animate);
+          } else {
+            spinning = false;
+            spinButton.disabled = false;
+            hiddenOverlay.classList.remove("active");
+            const finalIndex = getSelectedIndex();
+            const winner = segments[finalIndex];
+            resultText.textContent = hiddenMode.checked
+              ? "Result revealed!"
+              : `Landed on ${winner}.`;
+            playWinSound();
+            showResult(winner);
+          }
+        };
+
+        requestAnimationFrame(animate);
+      };
+
+      spinButton.addEventListener("click", spin);
+      closeModal.addEventListener("click", hideResult);
+      resultModal.addEventListener("click", (event) => {
+        if (event.target === resultModal) {
+          hideResult();
+        }
+      });
+      hiddenMode.addEventListener("change", () => {
+        hiddenOverlay.classList.toggle("active", hiddenMode.checked && spinning);
+        drawWheel();
+      });
+
+      drawWheel();
+    </script>
+  </body>
+</html>
